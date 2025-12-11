@@ -65,7 +65,7 @@ type xlsxPicLocks struct {
 type xlsxBlip struct {
 	Embed   string                        `xml:"r:embed,attr"`
 	Cstate  string                        `xml:"cstate,attr,omitempty"`
-	R       string                        `xml:"xmlns:r,attr"`
+	R       string                        `xml:"xmlns:r,attr,omitempty"`
 	ExtList *xlsxEGOfficeArtExtensionList `xml:"a:extLst"`
 }
 
@@ -283,6 +283,19 @@ type xlsxWsDr struct {
 	AbsoluteAnchor   []*xdrCellAnchor        `xml:"xdr:absoluteAnchor"`
 	OneCellAnchor    []*xdrCellAnchor        `xml:"xdr:oneCellAnchor"`
 	TwoCellAnchor    []*xdrCellAnchor        `xml:"xdr:twoCellAnchor"`
+}
+
+type cellImages struct {
+	XMLName   xml.Name    `xml:"etc:cellImages"`
+	ETC       string      `xml:"xmlns:etc,attr,omitempty"`
+	A         string      `xml:"xmlns:a,attr,omitempty"`
+	Xdr       string      `xml:"xmlns:xdr,attr,omitempty"`
+	R         string      `xml:"xmlns:r,attr,omitempty"`
+	CellImage []cellImage `xml:"etc:cellImage"`
+}
+
+type cellImage struct {
+	Pic xlsxPic `xml:"xdr:pic"`
 }
 
 // xlsxGraphicFrame (Graphic Frame) directly maps the xdr:graphicFrame element.

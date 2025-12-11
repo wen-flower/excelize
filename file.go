@@ -163,6 +163,7 @@ func (f *File) writeToZip(zw ZipWriter) error {
 	f.commentsWriter()
 	f.contentTypesWriter()
 	f.drawingsWriter()
+	f.cellImagesWriter()
 	f.volatileDepsWriter()
 	f.vmlDrawingWriter()
 	f.workBookWriter()
