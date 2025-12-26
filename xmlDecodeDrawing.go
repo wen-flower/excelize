@@ -283,6 +283,9 @@ type decodeClientData struct {
 // decodeCellImages directly maps the Kingsoft WPS Office embedded cell images.
 type decodeCellImages struct {
 	XMLName   xml.Name          `xml:"http://www.wps.cn/officeDocument/2017/etCustomData cellImages"`
+	A         string            `xml:"xmlns a,attr"`
+	Xdr       string            `xml:"xmlns xdr,attr"`
+	R         string            `xml:"xmlns r,attr"`
 	CellImage []decodeCellImage `xml:"cellImage"`
 }
 

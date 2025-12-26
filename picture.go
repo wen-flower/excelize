@@ -14,6 +14,7 @@ package excelize
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"image"
 	"io"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // PictureInsertType defines the type of the picture has been inserted into the
@@ -183,6 +186,23 @@ func (f *File) AddPicture(sheet, cell, name string, opts *GraphicOptions) error 
 	return f.AddPictureFromBytes(sheet, cell, &Picture{Extension: ext, File: file, Format: opts})
 }
 
+func (f *File) AddCellImagePicture(sheet, cell, name string) error {
+	var err error
+	// Check picture exists first.
+	if _, err = os.Stat(name); os.IsNotExist(err) {
+		return err
+	}
+	ext, ok := supportedImageTypes[strings.ToLower(path.Ext(name))]
+	if !ok {
+		return ErrImgExt
+	}
+	file, _ := os.ReadFile(filepath.Clean(name))
+	return f.AddPictureFromBytes(sheet, cell, &Picture{
+		Extension: ext, File: file, Format: &GraphicOptions{},
+		InsertType: PictureInsertTypeDISPIMG,
+	})
+}
+
 // AddPictureFromBytes provides the method to add picture in a sheet by given
 // picture format set (such as offset, scale, aspect ratio setting and print
 // settings), file base name, extension name and file bytes, supported image
@@ -231,6 +251,9 @@ func (f *File) AddPictureFromBytes(sheet, cell string, pic *Picture) error {
 	ext, ok := supportedImageTypes[strings.ToLower(pic.Extension)]
 	if !ok {
 		return ErrImgExt
+	}
+	if pic.InsertType == PictureInsertTypeDISPIMG {
+		return f.addCellImagePicture(sheet, cell, ext, pic)
 	}
 	if pic.InsertType != PictureInsertTypePlaceOverCells {
 		return ErrParameterInvalid
@@ -481,6 +504,64 @@ func (f *File) addMedia(file []byte, ext string) string {
 	media := "xl/media/image" + strconv.Itoa(count+1) + ext
 	f.Pkg.Store(media, file)
 	return media
+}
+
+func (f *File) addCellImagePicture(sheet string, cell string, ext string, pic *Picture) error {
+	ext, ok := supportedImageTypes[strings.ToLower(pic.Extension)]
+	if !ok {
+		return ErrImgExt
+	}
+
+	mediaStr := strings.TrimPrefix(f.addMedia(pic.File, ext), "xl/")
+	imageRID := f.addRels(defaultXMLPathCellImagesRels, SourceRelationshipImage, mediaStr, "")
+	imageID := fmt.Sprintf("ID_%s", strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")))
+	if f.DecodeCellImages == nil {
+		f.DecodeCellImages = &decodeCellImages{
+			XMLName:   xml.Name{Local: "cellImages", Space: NameSpaceWpsEtCustomData.Value},
+			R:         SourceRelationship.Value,
+			Xdr:       NameSpaceDrawingMLSpreadSheet.Value,
+			A:         NameSpaceDrawingML.Value,
+			CellImage: nil,
+		}
+	}
+	img, _, err := image.DecodeConfig(bytes.NewReader(pic.File))
+	if err != nil {
+		return err
+	}
+
+	f.DecodeCellImages.CellImage = append(f.DecodeCellImages.CellImage, decodeCellImage{Pic: decodePic{
+		NvPicPr: decodeNvPicPr{
+			CNvPr: decodeCNvPr{
+				ID:   imageRID,
+				Name: imageID,
+			},
+			CNvPicPr: decodeCNvPicPr{
+				PicLocks: decodePicLocks{
+					NoChangeAspect: true,
+				},
+			},
+		},
+		BlipFill: decodeBlipFill{
+			Blip: decodeBlip{
+				Embed: fmt.Sprintf("rId%d", imageRID),
+			},
+		},
+		SpPr: decodeSpPr{
+			Xfrm: decodeXfrm{
+				Ext: decodePositiveSize2D{
+					Cx: img.Width * EMU,
+					Cy: img.Height * EMU,
+				},
+			},
+		},
+	}})
+
+	err = f.SetCellFormula(sheet, cell, fmt.Sprintf("_xlfn.DISPIMG(\"%s\",1)", imageID))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // GetPictures provides a function to get picture meta info and raw content
@@ -834,6 +915,85 @@ func (f *File) drawingsWriter() {
 		}
 		return true
 	})
+}
+
+// cellImagesWriter 提供了一个在序列化结构后保存 xl/cellimages.xml 的功能。
+func (f *File) cellImagesWriter() {
+	decodeCellImages := f.DecodeCellImages
+	if decodeCellImages == nil {
+		return
+	}
+	content := &cellImages{
+		ETC: NameSpaceWpsEtCustomData.Value,
+		Xdr: decodeCellImages.Xdr,
+		A:   decodeCellImages.A,
+		R:   decodeCellImages.R,
+	}
+
+	for _, v := range decodeCellImages.CellImage {
+		content.CellImage = append(content.CellImage, cellImage{Pic: xlsxPic{
+			NvPicPr: xlsxNvPicPr{
+				CNvPr: xlsxCNvPr{
+					ID:    v.Pic.NvPicPr.CNvPr.ID,
+					Name:  v.Pic.NvPicPr.CNvPr.Name,
+					Descr: v.Pic.NvPicPr.CNvPr.Descr,
+					Title: v.Pic.NvPicPr.CNvPr.Title,
+				},
+				CNvPicPr: xlsxCNvPicPr{
+					PicLocks: xlsxPicLocks{
+						NoAdjustHandles:    v.Pic.NvPicPr.CNvPicPr.PicLocks.NoAdjustHandles,
+						NoChangeArrowheads: v.Pic.NvPicPr.CNvPicPr.PicLocks.NoChangeArrowheads,
+						NoChangeAspect:     v.Pic.NvPicPr.CNvPicPr.PicLocks.NoChangeAspect,
+						NoChangeShapeType:  v.Pic.NvPicPr.CNvPicPr.PicLocks.NoChangeShapeType,
+						NoCrop:             v.Pic.NvPicPr.CNvPicPr.PicLocks.NoCrop,
+						NoEditPoints:       v.Pic.NvPicPr.CNvPicPr.PicLocks.NoEditPoints,
+						NoGrp:              v.Pic.NvPicPr.CNvPicPr.PicLocks.NoGrp,
+						NoMove:             v.Pic.NvPicPr.CNvPicPr.PicLocks.NoMove,
+						NoResize:           v.Pic.NvPicPr.CNvPicPr.PicLocks.NoResize,
+						NoRot:              v.Pic.NvPicPr.CNvPicPr.PicLocks.NoRot,
+						NoSelect:           v.Pic.NvPicPr.CNvPicPr.PicLocks.NoSelect,
+					},
+				},
+			},
+			BlipFill: xlsxBlipFill{
+				Blip: xlsxBlip{
+					Embed:  v.Pic.BlipFill.Blip.Embed,
+					Cstate: v.Pic.BlipFill.Blip.Cstate,
+					R:      v.Pic.BlipFill.Blip.R,
+				},
+				Stretch: xlsxStretch{
+					FillRect: v.Pic.BlipFill.Stretch.FillRect,
+				},
+			},
+			SpPr: xlsxSpPr{
+				Xfrm: xlsxXfrm{
+					Off: xlsxOff{
+						X: v.Pic.SpPr.Xfrm.Off.X,
+						Y: v.Pic.SpPr.Xfrm.Off.Y,
+					},
+					Ext: xlsxPositiveSize2D{
+						Cx: v.Pic.SpPr.Xfrm.Ext.Cx,
+						Cy: v.Pic.SpPr.Xfrm.Ext.Cy,
+					},
+				},
+				PrstGeom: xlsxPrstGeom{
+					Prst: v.Pic.SpPr.PrstGeom.Prst,
+				},
+			},
+		}})
+	}
+
+	//rels, _ := f.relsReader(defaultXMLPathWorkbookRels)
+	//for i, relationship := range rels.Relationships {
+	//	relationship.Target == "cellimages.xml"
+	//}
+	f.addRels(defaultXMLPathWorkbookRels,
+		"http://www.wps.cn/officeDocument/2020/cellImage", "cellimages.xml",
+		"",
+	)
+
+	v, _ := xml.Marshal(content)
+	f.saveFileList(defaultXMLPathCellImages, v)
 }
 
 // drawingResize calculate the height and width after resizing.

@@ -38,6 +38,7 @@ var (
 	SourceRelationshipChart2014             = xml.Attr{Name: xml.Name{Local: "c16", Space: "xmlns"}, Value: "http://schemas.microsoft.com/office/drawing/2014/chart"}
 	SourceRelationshipChart201506           = xml.Attr{Name: xml.Name{Local: "c16r2", Space: "xmlns"}, Value: "http://schemas.microsoft.com/office/drawing/2015/06/chart"}
 	SourceRelationshipCompatibility         = xml.Attr{Name: xml.Name{Local: "mc", Space: "xmlns"}, Value: "http://schemas.openxmlformats.org/markup-compatibility/2006"}
+	NameSpaceWpsEtCustomData                = xml.Attr{Name: xml.Name{Local: "etc", Space: "xmlns"}, Value: "http://www.wps.cn/officeDocument/2017/etCustomData"}
 )
 
 // Source relationship and namespace.
